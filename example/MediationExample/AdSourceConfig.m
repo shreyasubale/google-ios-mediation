@@ -29,6 +29,10 @@ NSString *const kCustomEventSwiftBannerAdUnitID = @"ca-app-pub-3940256099942544/
 NSString *const kCustomEventSwiftInterstitialAdUnitID = @"ca-app-pub-3940256099942544/6597517739";
 NSString *const kCustomEventSwiftNativeAdUnitID = @"ca-app-pub-3940256099942544/1645833135";
 NSString *const kCustomEventSwiftRewardedAdUnitID = @"ca-app-pub-3940256099942544/4906631573";
+NSString *const kMRAIDCustomEventBannerAdUnitID = @"ca-app-pub-3940256099942544/2493674513";
+NSString *const kMRAIDCustomEventInterstitialAdUnitID = @"ca-app-pub-3940256099942544/3970407716";
+NSString *const kMRAIDCustomEventNativeAdUnitID = @"ca-app-pub-3940256099942544/2099734914";
+NSString *const kMRAIDCustomEventRewardedAdUnitID = @"ca-app-pub-3940256099942544/7193106110";
 
 @implementation AdSourceConfig
 
@@ -50,6 +54,8 @@ NSString *const kCustomEventSwiftRewardedAdUnitID = @"ca-app-pub-394025609994254
       return kCustomEventBannerAdUnitID;
     case AdSourceTypeCustomEventSwift:
       return kCustomEventSwiftBannerAdUnitID;
+    case AdSourceTypeMRAIDCustomEvent:
+      return kMRAIDCustomEventBannerAdUnitID;
   }
 }
 
@@ -59,6 +65,8 @@ NSString *const kCustomEventSwiftRewardedAdUnitID = @"ca-app-pub-394025609994254
       return kCustomEventInterstitialAdUnitID;
     case AdSourceTypeCustomEventSwift:
       return kCustomEventSwiftInterstitialAdUnitID;
+    case AdSourceTypeMRAIDCustomEvent:
+      return kMRAIDCustomEventInterstitialAdUnitID;
   }
 }
 
@@ -68,6 +76,8 @@ NSString *const kCustomEventSwiftRewardedAdUnitID = @"ca-app-pub-394025609994254
       return kCustomEventNativeAdUnitID;
     case AdSourceTypeCustomEventSwift:
       return kCustomEventSwiftNativeAdUnitID;
+    case AdSourceTypeMRAIDCustomEvent:
+      return kMRAIDCustomEventNativeAdUnitID;
   }
 }
 
@@ -77,6 +87,8 @@ NSString *const kCustomEventSwiftRewardedAdUnitID = @"ca-app-pub-394025609994254
       return kCustomEventRewardedAdUnitID;
     case AdSourceTypeCustomEventSwift:
       return kCustomEventSwiftRewardedAdUnitID;
+    case AdSourceTypeMRAIDCustomEvent:
+      return kMRAIDCustomEventRewardedAdUnitID;
   }
 }
 
@@ -86,6 +98,8 @@ NSString *const kCustomEventSwiftRewardedAdUnitID = @"ca-app-pub-394025609994254
       return SampleCustomEventExtraKeyAwesomeness;
     case AdSourceTypeCustomEventSwift:
       return [SampleCustomEventConstantsSwift awesomenessKey];
+    case AdSourceTypeMRAIDCustomEvent:
+      return @"mraid_awesomeness";
   }
 }
 
@@ -95,6 +109,8 @@ NSString *const kCustomEventSwiftRewardedAdUnitID = @"ca-app-pub-394025609994254
       return @"Objective-C Custom Event";
     case AdSourceTypeCustomEventSwift:
       return @"Swift Custom Event";
+    case AdSourceTypeMRAIDCustomEvent:
+      return @"MRAID Custom Event";
   }
 }
 

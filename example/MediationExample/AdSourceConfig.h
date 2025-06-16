@@ -22,6 +22,7 @@
 typedef NS_ENUM(NSUInteger, AdSourceType) {
   AdSourceTypeCustomEventObjC,
   AdSourceTypeCustomEventSwift,
+  AdSourceTypeMRAIDCustomEvent,
 };
 
 @interface AdSourceConfig : NSObject

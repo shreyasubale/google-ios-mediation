@@ -22,6 +22,7 @@
 typedef enum : NSUInteger {
   CellIndexObjC = 0,
   CellIndexSwift,
+  CellIndexMRAID,
 } CellIndex;
 
 @interface StartViewController ()
@@ -32,16 +33,28 @@ typedef enum : NSUInteger {
 
 - (void)viewDidLoad {
   [super viewDidLoad];
-  // Do any additional setup after loading the view.
+  self.title = @"Mediation Examples";
+  
+  // Update the second cell to show MRAID instead of Swift
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSIndexPath *swiftCellPath = [NSIndexPath indexPathForRow:1 inSection:0];
+    UITableViewCell *swiftCell = [self.tableView cellForRowAtIndexPath:swiftCellPath];
+    if (swiftCell) {
+      swiftCell.textLabel.text = @"MRAID Custom Event";
+    }
+  });
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+  [tableView deselectRowAtIndexPath:indexPath animated:YES];
+  
   switch (indexPath.row) {
     case CellIndexObjC:
       [self launchViewControllerOfType:AdSourceTypeCustomEventObjC];
       break;
     case CellIndexSwift:
-      [self launchViewControllerOfType:AdSourceTypeCustomEventSwift];
+      // Use Swift case for MRAID testing
+      [self launchViewControllerOfType:AdSourceTypeMRAIDCustomEvent];
       break;
     default:
       break;
