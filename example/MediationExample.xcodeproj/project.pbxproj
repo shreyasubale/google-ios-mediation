@@ -281,6 +281,7 @@
 				TargetAttributes = {
 					26E462B11B8693F600D2C50F = {
 						CreatedOnToolsVersion = 6.3.2;
+						DevelopmentTeam = 8ZN26XHGKJ;
 						LastSwiftMigration = "";
 					};
 				};
@@ -517,8 +518,9 @@
 			baseConfigurationReference = 7107C10FEDCC91BD2EDD4443 /* Pods-MediationExample.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 8ZN26XHGKJ;
 				INFOPLIST_FILE = "$(SRCROOT)/MediationExample/Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -554,7 +556,7 @@
 					"-framework",
 					"\"SystemConfiguration\"",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "Google.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = "expo.google.med-rfc1034identifier";
 				PRODUCT_NAME = MediationExample;
 				SWIFT_SWIFT3_OBJC_INFERENCE = Default;
 				SWIFT_VERSION = 4.2;
@@ -566,8 +568,11 @@
 			baseConfigurationReference = 783954DA81FD1618AFD40150 /* Pods-MediationExample.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				DEVELOPMENT_TEAM = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8ZN26XHGKJ;
 				INFOPLIST_FILE = "$(SRCROOT)/MediationExample/Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -603,8 +608,9 @@
 					"-framework",
 					"\"SystemConfiguration\"",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "Google.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = shreyas.test1;
 				PRODUCT_NAME = MediationExample;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_SWIFT3_OBJC_INFERENCE = Default;
 				SWIFT_VERSION = 4.2;
 			};

@@ -29,6 +29,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>This app uses advertising identifier to provide personalized ads and measure advertising effectiveness. You can change this setting in your device preferences.</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>

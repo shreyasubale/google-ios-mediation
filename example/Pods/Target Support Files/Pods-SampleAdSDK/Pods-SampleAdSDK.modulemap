@@ -1,0 +1,6 @@
+module Pods_SampleAdSDK {
+  umbrella header "Pods-SampleAdSDK-umbrella.h"
+
+  export *
+  module * { export * }
+}

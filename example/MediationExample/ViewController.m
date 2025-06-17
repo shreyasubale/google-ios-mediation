@@ -23,11 +23,64 @@
 #import <SampleAdSDK/SampleAdSDK.h>
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
+#import <AdSupport/AdSupport.h>
+#import <AppTrackingTransparency/AppTrackingTransparency.h>
 
 #import "ExampleNativeAdView.h"
 // Import MRAID custom event
 #import "../CustomEvent/MRAIDCustomEvent.h"
 #import "../CustomEvent/MRAIDCustomEventInterstitial.h"
+
+// Custom UIViewController subclass for MRAID orientation control
+@interface MRAIDViewController : UIViewController
+@property(nonatomic, assign) BOOL allowOrientationChange;
+@property(nonatomic, strong) NSString *forceOrientation;
+@end
+
+@implementation MRAIDViewController
+
+- (instancetype)init {
+  self = [super init];
+  if (self) {
+    // Default MRAID orientation settings
+    _allowOrientationChange = YES;
+    _forceOrientation = @"none";
+  }
+  return self;
+}
+
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+  // If orientation changes are not allowed, lock to the forced orientation
+  if (!self.allowOrientationChange) {
+    if ([self.forceOrientation isEqualToString:@"portrait"]) {
+      return UIInterfaceOrientationMaskPortrait;
+    } else if ([self.forceOrientation isEqualToString:@"landscape"]) {
+      return UIInterfaceOrientationMaskLandscape;
+    }
+  }
+  
+  // Default: allow all orientations
+  return UIInterfaceOrientationMaskAll;
+}
+
+- (UIInterfaceOrientation)preferredInterfaceOrientationForPresentation {
+  if (!self.allowOrientationChange) {
+    if ([self.forceOrientation isEqualToString:@"portrait"]) {
+      return UIInterfaceOrientationPortrait;
+    } else if ([self.forceOrientation isEqualToString:@"landscape"]) {
+      return UIInterfaceOrientationLandscapeLeft;
+    }
+  }
+  
+  // Default: use current orientation
+  return [UIApplication sharedApplication].statusBarOrientation;
+}
+
+- (BOOL)shouldAutorotate {
+  return self.allowOrientationChange;
+}
+
+@end
 
 @interface ViewController () <GADFullScreenContentDelegate,
                               GADNativeAdLoaderDelegate,
@@ -49,6 +102,8 @@
 @property(nonatomic, strong) GADRewardedAd *rewardedAd;
 
 @property(nonatomic, strong) MRAIDCustomEventInterstitial *mraidInterstitial;
+
+@property(nonatomic, strong) UILabel *advertiserIdLabel;
 
 /// You must keep a strong reference to the GADAdLoader during the ad loading process.
 @property(nonatomic, strong) GADAdLoader *adLoader;
@@ -84,6 +139,12 @@
 - (void)viewDidLoad {
   [super viewDidLoad];
   self.title = self.config.title;
+
+  // Add advertiser ID display for MRAID custom event
+  if (self.config.adSourceType == AdSourceTypeMRAIDCustomEvent) {
+    [self setupMRAIDAdvertiserDisplay];
+    [self requestTrackingPermissionIfNeeded];
+  }
 
   self.bannerAdView.adUnitID = self.config.bannerAdUnitID;
   self.bannerAdView.rootViewController = self;
@@ -316,14 +377,290 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
 
 #pragma mark - MRAID Testing
 
+- (void)requestTrackingPermissionIfNeeded {
+  if (@available(iOS 14.5, *)) {
+    ATTrackingManagerAuthorizationStatus status = [ATTrackingManager trackingAuthorizationStatus];
+    
+    if (status == ATTrackingManagerAuthorizationStatusNotDetermined) {
+      [ATTrackingManager requestTrackingAuthorizationWithCompletionHandler:^(ATTrackingManagerAuthorizationStatus status) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          NSLog(@"App Tracking Transparency status: %ld", (long)status);
+          [self updateMRAIDAdvertiserInfo];
+        });
+      }];
+    } else {
+      NSLog(@"App Tracking Transparency status: %ld", (long)status);
+    }
+  } else {
+    NSLog(@"iOS version < 14.5, App Tracking Transparency not required");
+  }
+}
+
+- (void)setupMRAIDAdvertiserDisplay {
+  // Create advertiser ID label
+  self.advertiserIdLabel = [[UILabel alloc] init];
+  self.advertiserIdLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  self.advertiserIdLabel.textAlignment = NSTextAlignmentCenter;
+  self.advertiserIdLabel.font = [UIFont systemFontOfSize:14];
+  self.advertiserIdLabel.textColor = [UIColor systemBlueColor];
+  self.advertiserIdLabel.backgroundColor = [UIColor colorWithRed:0.9 green:0.9 blue:1.0 alpha:1.0];
+  self.advertiserIdLabel.layer.cornerRadius = 8;
+  self.advertiserIdLabel.layer.borderWidth = 1;
+  self.advertiserIdLabel.layer.borderColor = [UIColor systemBlueColor].CGColor;
+  self.advertiserIdLabel.clipsToBounds = YES;
+  self.advertiserIdLabel.numberOfLines = 0;
+  
+  // Get advertiser information
+  NSString *idfaString = [[[ASIdentifierManager sharedManager] advertisingIdentifier] UUIDString];
+  BOOL isTrackingEnabled = [[ASIdentifierManager sharedManager] isAdvertisingTrackingEnabled];
+  NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier];
+  
+  // Get ATT status if available
+  NSString *attStatus = @"N/A";
+  if (@available(iOS 14.5, *)) {
+    ATTrackingManagerAuthorizationStatus status = [ATTrackingManager trackingAuthorizationStatus];
+    switch (status) {
+      case ATTrackingManagerAuthorizationStatusNotDetermined:
+        attStatus = @"Not Asked";
+        break;
+      case ATTrackingManagerAuthorizationStatusRestricted:
+        attStatus = @"Restricted";
+        break;
+      case ATTrackingManagerAuthorizationStatusDenied:
+        attStatus = @"Denied";
+        break;
+      case ATTrackingManagerAuthorizationStatusAuthorized:
+        attStatus = @"Authorized";
+        break;
+    }
+  }
+  
+  // Create display text
+  NSMutableString *displayText = [NSMutableString string];
+  [displayText appendString:@"📱 MRAID Advertiser Info\n\n"];
+  
+  if (idfaString && ![idfaString isEqualToString:@"00000000-0000-0000-0000-000000000000"]) {
+    [displayText appendFormat:@"IDFA: %@...\n", [idfaString substringToIndex:8]];
+    [displayText appendFormat:@"Tracking: %@\n", isTrackingEnabled ? @"✅ Enabled" : @"❌ Disabled"];
+  } else {
+    [displayText appendString:@"IDFA: Not available\n"];
+    [displayText appendString:@"Tracking: ❌ Disabled\n"];
+  }
+  
+  [displayText appendFormat:@"ATT Status: %@\n", attStatus];
+  [displayText appendFormat:@"Bundle: %@\n", bundleId];
+  [displayText appendString:@"MRAID v3.0 | localhost:8080"];
+  
+  // Add timestamp for testing
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.timeStyle = NSDateFormatterShortStyle;
+  NSString *timestamp = [formatter stringFromDate:[NSDate date]];
+  [displayText appendFormat:@"\n%@", timestamp];
+  
+  self.advertiserIdLabel.text = displayText;
+  
+  // Add to view
+  [self.view addSubview:self.advertiserIdLabel];
+  
+  // Position it at the bottom of the screen, above the safe area
+  NSLayoutConstraint *bottomConstraint = [self.advertiserIdLabel.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-20];
+  
+  [NSLayoutConstraint activateConstraints:@[
+    bottomConstraint,
+    [self.advertiserIdLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:20],
+    [self.advertiserIdLabel.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20],
+    [self.advertiserIdLabel.heightAnchor constraintLessThanOrEqualToConstant:120]
+  ]];
+  
+  // Add padding
+  self.advertiserIdLabel.layer.cornerRadius = 8;
+  self.advertiserIdLabel.text = [NSString stringWithFormat:@"  %@  ", self.advertiserIdLabel.text];
+}
+
 - (void)showMRAIDInterstitial {
   NSLog(@"Showing MRAID interstitial - bypassing mediation for testing");
   
-  // Set the MRAID ad URL - using localhost for testing
-  NSString *mraidURL = @"http://localhost:8080/MRAIDTestAd.html";
+  // Update advertiser info with MRAID-specific details
+  [self updateMRAIDAdvertiserInfo];
   
-  // Directly show MRAID WebView for testing
-  [self showDirectMRAIDWebView:mraidURL];
+  // Show URL input dialog
+  [self showMRAIDURLInputDialog];
+}
+
+- (void)showMRAIDURLInputDialog {
+  // Default MRAID URL - using localhost for testing
+  NSString *defaultURL = @"http://192.168.1.251:8080/MRAIDTestAd.html";
+  
+  UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"MRAID Creative URL"
+                                                               message:@"Enter the URL for the MRAID creative or choose a preset:"
+                                                        preferredStyle:UIAlertControllerStyleAlert];
+  
+  // Add text field with default URL
+  [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+    textField.text = defaultURL;
+    textField.placeholder = @"http://localhost:8080/MRAIDTestAd.html";
+    textField.keyboardType = UIKeyboardTypeURL;
+    textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    textField.autocorrectionType = UITextAutocorrectionTypeNo;
+  }];
+  
+  // Load button
+  UIAlertAction *loadAction = [UIAlertAction actionWithTitle:@"Load MRAID"
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(UIAlertAction *action) {
+    UITextField *textField = alert.textFields.firstObject;
+    NSString *enteredURL = textField.text.length > 0 ? textField.text : defaultURL;
+    
+    NSLog(@"[MRAID Debug] User entered URL: %@", enteredURL);
+    
+    // Validate URL format
+    NSURL *url = [NSURL URLWithString:enteredURL];
+    if (url && url.scheme && url.host) {
+      [self showDirectMRAIDWebView:enteredURL];
+    } else {
+      // Show error for invalid URL
+      [self showMRAIDURLErrorDialog:enteredURL];
+    }
+  }];
+  
+  // Localhost preset button
+  UIAlertAction *localhostAction = [UIAlertAction actionWithTitle:@"Use Localhost"
+                                                           style:UIAlertActionStyleDefault
+                                                         handler:^(UIAlertAction *action) {
+    [self showDirectMRAIDWebView:@"http://localhost:8080/MRAIDTestAd.html"];
+  }];
+  
+  // Sample MRAID URL preset button
+  UIAlertAction *sampleAction = [UIAlertAction actionWithTitle:@"Use Sample URL"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(UIAlertAction *action) {
+    [self showDirectMRAIDWebView:@"https://www.iab.com/wp-content/uploads/2015/08/MRAID_3.0_FINAL.js"];
+  }];
+  
+  // Cancel button
+  UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"Cancel"
+                                                        style:UIAlertActionStyleCancel
+                                                      handler:nil];
+  
+  [alert addAction:loadAction];
+  [alert addAction:localhostAction];
+  [alert addAction:sampleAction];
+  [alert addAction:cancelAction];
+  
+  // Present the dialog
+  [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)showMRAIDURLErrorDialog:(NSString *)invalidURL {
+  UIAlertController *errorAlert = [UIAlertController alertControllerWithTitle:@"Invalid URL"
+                                                                      message:[NSString stringWithFormat:@"The URL '%@' is not valid. Please check the format and try again.", invalidURL]
+                                                               preferredStyle:UIAlertControllerStyleAlert];
+  
+  UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK"
+                                                    style:UIAlertActionStyleDefault
+                                                  handler:^(UIAlertAction *action) {
+    // Show the URL input dialog again
+    [self showMRAIDURLInputDialog];
+  }];
+  
+  UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"Cancel"
+                                                        style:UIAlertActionStyleCancel
+                                                      handler:nil];
+  
+  [errorAlert addAction:okAction];
+  [errorAlert addAction:cancelAction];
+  
+  [self presentViewController:errorAlert animated:YES completion:nil];
+}
+
+- (void)updateMRAIDAdvertiserInfo {
+  if (!self.advertiserIdLabel) return;
+  
+  // Get current info
+  NSString *idfaString = [[[ASIdentifierManager sharedManager] advertisingIdentifier] UUIDString];
+  BOOL isTrackingEnabled = [[ASIdentifierManager sharedManager] isAdvertisingTrackingEnabled];
+  NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier];
+  
+  // Get ATT status if available
+  NSString *attStatus = @"N/A";
+  if (@available(iOS 14.5, *)) {
+    ATTrackingManagerAuthorizationStatus status = [ATTrackingManager trackingAuthorizationStatus];
+    switch (status) {
+      case ATTrackingManagerAuthorizationStatusNotDetermined:
+        attStatus = @"Not Asked";
+        break;
+      case ATTrackingManagerAuthorizationStatusRestricted:
+        attStatus = @"Restricted";
+        break;
+      case ATTrackingManagerAuthorizationStatusDenied:
+        attStatus = @"Denied";
+        break;
+      case ATTrackingManagerAuthorizationStatusAuthorized:
+        attStatus = @"Authorized";
+        break;
+    }
+  }
+  
+  // Additional debugging
+  NSLog(@"=== IDFA Debug Info ===");
+  NSLog(@"IDFA String: %@", idfaString);
+  NSLog(@"Is Tracking Enabled: %@", isTrackingEnabled ? @"YES" : @"NO");
+  NSLog(@"ATT Status: %@", attStatus);
+  NSLog(@"Is Simulator: %@", TARGET_OS_SIMULATOR ? @"YES" : @"NO");
+  
+  // Check if device has Limited Ad Tracking enabled in Settings
+  NSString *deviceInfo = @"Real Device";
+  if (TARGET_OS_SIMULATOR) {
+    deviceInfo = @"⚠️ Simulator";
+  }
+  
+  // Create updated display text
+  NSMutableString *displayText = [NSMutableString string];
+  [displayText appendString:@"📱 MRAID Advertiser Info (Active)\n\n"];
+  
+  if (idfaString && ![idfaString isEqualToString:@"00000000-0000-0000-0000-000000000000"]) {
+    [displayText appendFormat:@"IDFA: %@...\n", [idfaString substringToIndex:8]];
+    [displayText appendFormat:@"Tracking: %@\n", isTrackingEnabled ? @"✅ Enabled" : @"❌ Disabled"];
+  } else {
+    // For testing purposes, generate a mock IDFA when real one isn't available
+    NSString *mockIDFA = @"12345678-ABCD-EFGH-IJKL-MNOPQRSTUVWX";
+    [displayText appendString:@"IDFA: ❌ Not available\n"];
+    [displayText appendFormat:@"Mock IDFA: %@...\n", [mockIDFA substringToIndex:8]];
+    [displayText appendString:@"Tracking: ❌ Disabled\n"];
+    
+    // Add helpful info for IDFA issues
+    if ([attStatus isEqualToString:@"Authorized"]) {
+      if (TARGET_OS_SIMULATOR) {
+        [displayText appendString:@"ℹ️ Note: Simulator limitation\n"];
+        [displayText appendString:@"💡 Try: Test on real device\n"];
+      } else {
+        [displayText appendString:@"ℹ️ Check: Settings > Privacy > Tracking\n"];
+        [displayText appendString:@"💡 Or: Reset Advertising ID\n"];
+      }
+    }
+  }
+  
+  [displayText appendFormat:@"ATT Status: %@\n", attStatus];
+  [displayText appendFormat:@"Device: %@\n", deviceInfo];
+  [displayText appendFormat:@"Bundle: %@\n", bundleId];
+  [displayText appendString:@"MRAID v3.0 | localhost:8080"];
+  
+  // Add timestamp
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.timeStyle = NSDateFormatterShortStyle;
+  NSString *timestamp = [formatter stringFromDate:[NSDate date]];
+  [displayText appendFormat:@"\n%@", timestamp];
+  
+  // Update with animation
+  [UIView animateWithDuration:0.3 animations:^{
+    self.advertiserIdLabel.backgroundColor = [UIColor colorWithRed:0.9 green:1.0 blue:0.9 alpha:1.0];
+  } completion:^(BOOL finished) {
+    [UIView animateWithDuration:0.3 animations:^{
+      self.advertiserIdLabel.backgroundColor = [UIColor colorWithRed:0.9 green:0.9 blue:1.0 alpha:1.0];
+    }];
+  }];
+  
+  self.advertiserIdLabel.text = [NSString stringWithFormat:@"  %@  ", displayText];
 }
 
 - (void)showDirectMRAIDWebView:(NSString *)urlString {
@@ -332,9 +669,33 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
   // Create WebView configuration with MRAID support
   WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
   
+  // Enable debugging and disable caching
+  config.preferences.javaScriptEnabled = YES;
+  config.preferences.javaScriptCanOpenWindowsAutomatically = YES;
+  
+  // Disable caching for fresh content on every load
+  config.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore];
+  
   // Add MRAID JavaScript bridge
   WKUserContentController *contentController = [[WKUserContentController alloc] init];
   [contentController addScriptMessageHandler:self name:@"mraid"];
+  
+  // Add debugging console bridge
+  [contentController addScriptMessageHandler:self name:@"console"];
+  
+  // Inject console debugging script
+  NSString *consoleJS = @"console.log = function(message) { window.webkit.messageHandlers.console.postMessage('LOG: ' + message); };"
+                        @"console.error = function(message) { window.webkit.messageHandlers.console.postMessage('ERROR: ' + message); };"
+                        @"console.warn = function(message) { window.webkit.messageHandlers.console.postMessage('WARN: ' + message); };"
+                        @"window.onerror = function(msg, url, line, col, error) {"
+                        @"  var errorMsg = 'JavaScript Error: ' + msg + ' at ' + url + ':' + line + ':' + col;"
+                        @"  window.webkit.messageHandlers.console.postMessage(errorMsg);"
+                        @"  return false;"
+                        @"};";
+  WKUserScript *consoleScript = [[WKUserScript alloc] initWithSource:consoleJS
+                                                       injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                                                    forMainFrameOnly:NO];
+  [contentController addUserScript:consoleScript];
   
   // Inject MRAID JavaScript
   NSString *mraidJS = [self getMRAIDJavaScript];
@@ -351,8 +712,23 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
   WKWebView *webView = [[WKWebView alloc] initWithFrame:self.view.bounds configuration:config];
   webView.navigationDelegate = self;
   
-  // Create full-screen presentation controller
-  UIViewController *presentationController = [[UIViewController alloc] init];
+  // Enable debugging features
+  if (@available(iOS 16.4, *)) {
+    webView.inspectable = YES;
+  }
+  
+  // Additional debugging settings for development
+  webView.allowsBackForwardNavigationGestures = NO;
+  webView.allowsLinkPreview = NO;
+  
+  // Log WebView creation
+  NSLog(@"[MRAID Debug] WebView created with debugging enabled");
+  NSLog(@"[MRAID Debug] Loading URL: %@", urlString);
+  NSLog(@"[MRAID Debug] Cache disabled: YES");
+  NSLog(@"[MRAID Debug] Remote debugging: %@", @"YES");
+  
+  // Create full-screen presentation controller with MRAID orientation support
+  MRAIDViewController *presentationController = [[MRAIDViewController alloc] init];
   presentationController.modalPresentationStyle = UIModalPresentationFullScreen;
   
   // Setup WebView for full-screen display
@@ -374,8 +750,26 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
   // Load the MRAID ad
   NSURL *url = [NSURL URLWithString:urlString];
   if (url) {
-    NSURLRequest *request = [NSURLRequest requestWithURL:url];
-    [webView loadRequest:request];
+    // Create request with no-cache headers
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.cachePolicy = NSURLRequestReloadIgnoringLocalAndRemoteCacheData;
+    [request setValue:@"no-cache, no-store, must-revalidate" forHTTPHeaderField:@"Cache-Control"];
+    [request setValue:@"no-cache" forHTTPHeaderField:@"Pragma"];
+    [request setValue:@"0" forHTTPHeaderField:@"Expires"];
+    
+    // Add timestamp to URL to prevent caching
+    NSTimeInterval timestamp = [[NSDate date] timeIntervalSince1970];
+    NSString *urlWithTimestamp = [NSString stringWithFormat:@"%@?t=%.0f", urlString, timestamp];
+    NSURL *finalURL = [NSURL URLWithString:urlWithTimestamp];
+    
+    NSMutableURLRequest *finalRequest = [NSMutableURLRequest requestWithURL:finalURL];
+    finalRequest.cachePolicy = NSURLRequestReloadIgnoringLocalAndRemoteCacheData;
+    [finalRequest setValue:@"no-cache, no-store, must-revalidate" forHTTPHeaderField:@"Cache-Control"];
+    [finalRequest setValue:@"no-cache" forHTTPHeaderField:@"Pragma"];
+    [finalRequest setValue:@"0" forHTTPHeaderField:@"Expires"];
+    
+    NSLog(@"[MRAID Debug] Loading with no-cache URL: %@", urlWithTimestamp);
+    [webView loadRequest:finalRequest];
     
     // Present the ad
     [self presentViewController:presentationController animated:YES completion:^{
@@ -387,7 +781,7 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
 }
 
 - (void)closeMRAIDWebView:(UIButton *)sender {
-  UIViewController *presentationController = objc_getAssociatedObject(sender, "webViewController");
+  MRAIDViewController *presentationController = objc_getAssociatedObject(sender, "webViewController");
   if (presentationController) {
     [presentationController dismissViewControllerAnimated:YES completion:^{
       NSLog(@"MRAID WebView dismissed");
@@ -396,11 +790,16 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
 }
 
 - (NSString *)getMRAIDJavaScript {
-  // Same MRAID JavaScript as in MRAIDCustomEventInterstitial.m
+  // Complete MRAID 3.0 JavaScript implementation with all methods
   return @"var mraid = (function() {\n"
          @"  var state = 'loading';\n"
          @"  var isViewable = false;\n"
          @"  var listeners = {};\n"
+         @"  var customCloseEnabled = false;\n"
+         @"  var orientationProperties = {\n"
+         @"    allowOrientationChange: true,\n"
+         @"    forceOrientation: 'none'\n"
+         @"  };\n"
          @"\n"
          @"  function callListeners(event, data) {\n"
          @"    if (listeners[event]) {\n"
@@ -435,6 +834,36 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
          @"      window.webkit.messageHandlers.mraid.postMessage({action: 'open', url: url});\n"
          @"    },\n"
          @"    \n"
+         @"    useCustomClose: function(useCustomClose) {\n"
+         @"      customCloseEnabled = !!useCustomClose;\n"
+         @"      window.webkit.messageHandlers.mraid.postMessage({\n"
+         @"        action: 'useCustomClose',\n"
+         @"        useCustomClose: customCloseEnabled\n"
+         @"      });\n"
+         @"    },\n"
+         @"    \n"
+         @"    setOrientationProperties: function(properties) {\n"
+         @"      if (properties && typeof properties === 'object') {\n"
+         @"        if (properties.hasOwnProperty('allowOrientationChange')) {\n"
+         @"          orientationProperties.allowOrientationChange = !!properties.allowOrientationChange;\n"
+         @"        }\n"
+         @"        if (properties.hasOwnProperty('forceOrientation')) {\n"
+         @"          var validOrientations = ['portrait', 'landscape', 'none'];\n"
+         @"          if (validOrientations.indexOf(properties.forceOrientation) !== -1) {\n"
+         @"            orientationProperties.forceOrientation = properties.forceOrientation;\n"
+         @"          }\n"
+         @"        }\n"
+         @"        window.webkit.messageHandlers.mraid.postMessage({\n"
+         @"          action: 'setOrientationProperties',\n"
+         @"          orientationProperties: orientationProperties\n"
+         @"        });\n"
+         @"      }\n"
+         @"    },\n"
+         @"    \n"
+         @"    getOrientationProperties: function() {\n"
+         @"      return JSON.parse(JSON.stringify(orientationProperties));\n"
+         @"    },\n"
+         @"    \n"
          @"    getScreenSize: function() {\n"
          @"      return { width: window.screen.width, height: window.screen.height };\n"
          @"    },\n"
@@ -445,6 +874,11 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
          @"    \n"
          @"    getCurrentPosition: function() {\n"
          @"      return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };\n"
+         @"    },\n"
+         @"    \n"
+         @"    isFeatureSupported: function(feature) {\n"
+         @"      var supportedFeatures = ['sms', 'tel', 'calendar', 'storePicture', 'inlineVideo'];\n"
+         @"      return supportedFeatures.indexOf(feature) !== -1;\n"
          @"    },\n"
          @"    \n"
          @"    _setState: function(newState) {\n"
@@ -463,6 +897,10 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
          @"    \n"
          @"    _fireReady: function() {\n"
          @"      callListeners('ready');\n"
+         @"    },\n"
+         @"    \n"
+         @"    _updateCustomClose: function(enabled) {\n"
+         @"      customCloseEnabled = enabled;\n"
          @"    }\n"
          @"  };\n"
          @"})();\n"
@@ -479,17 +917,48 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
          @"    mraid._setIsViewable(true);\n"
          @"    mraid._fireReady();\n"
          @"  }, 1);\n"
-                   @"}\n";
+         @"}\n";
 }
 
 #pragma mark - WKNavigationDelegate
 
+- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
+  NSLog(@"[MRAID Debug] WebView started loading: %@", webView.URL.absoluteString);
+}
+
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-  NSLog(@"MRAID WebView finished loading");
+  NSLog(@"[MRAID Debug] WebView finished loading: %@", webView.URL.absoluteString);
+  
+  // Inject additional debugging code after page load
+  NSString *debugJS = @"console.log('MRAID WebView loaded successfully');"
+                      @"console.log('MRAID object available:', typeof mraid !== 'undefined');"
+                      @"console.log('Document ready state:', document.readyState);"
+                      @"if (typeof mraid !== 'undefined') {"
+                      @"  console.log('MRAID version:', mraid.getVersion());"
+                      @"  console.log('MRAID state:', mraid.getState());"
+                      @"  console.log('MRAID viewable:', mraid.isViewable());"
+                      @"}";
+  
+  [webView evaluateJavaScript:debugJS completionHandler:^(id result, NSError *error) {
+    if (error) {
+      NSLog(@"[MRAID Debug] Error injecting debug script: %@", error.localizedDescription);
+    }
+  }];
 }
 
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-  NSLog(@"MRAID WebView failed to load: %@", error.localizedDescription);
+  NSLog(@"[MRAID Debug] WebView failed to load: %@", error.localizedDescription);
+  NSLog(@"[MRAID Debug] Error domain: %@", error.domain);
+  NSLog(@"[MRAID Debug] Error code: %ld", (long)error.code);
+}
+
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+  NSLog(@"[MRAID Debug] WebView failed provisional navigation: %@", error.localizedDescription);
+}
+
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+  NSLog(@"[MRAID Debug] Navigation request: %@", navigationAction.request.URL.absoluteString);
+  decisionHandler(WKNavigationActionPolicyAllow);
 }
 
 #pragma mark - WKScriptMessageHandler
@@ -518,7 +987,85 @@ didFailToPresentFullScreenContentWithError:(nonnull NSError *)error {
           [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
         }
       }
+    } else if ([action isEqualToString:@"useCustomClose"]) {
+      BOOL useCustomClose = [data[@"useCustomClose"] boolValue];
+      NSLog(@"MRAID useCustomClose: %@", useCustomClose ? @"YES" : @"NO");
+      [self handleCustomCloseChange:useCustomClose];
+    } else if ([action isEqualToString:@"setOrientationProperties"]) {
+      NSDictionary *orientationProperties = data[@"orientationProperties"];
+      NSLog(@"MRAID setOrientationProperties: %@", orientationProperties);
+      [self handleOrientationPropertiesChange:orientationProperties];
     }
+  } else if ([message.name isEqualToString:@"console"]) {
+    // Handle JavaScript console output for debugging
+    NSString *consoleMessage = [NSString stringWithFormat:@"[WebView Console] %@", message.body];
+    NSLog(@"%@", consoleMessage);
+  }
+}
+
+#pragma mark - MRAID Action Handlers
+
+- (void)handleCustomCloseChange:(BOOL)useCustomClose {
+  // Handle custom close button visibility
+  UIViewController *presentedController = self.presentedViewController;
+  if (presentedController && [presentedController isKindOfClass:[MRAIDViewController class]]) {
+    // Find the close button in the presented view
+    for (UIView *subview in presentedController.view.subviews) {
+      if ([subview isKindOfClass:[UIButton class]]) {
+        UIButton *closeButton = (UIButton *)subview;
+        if ([closeButton.titleLabel.text isEqualToString:@"✕"]) {
+          // Hide/show the default close button based on useCustomClose
+          closeButton.hidden = useCustomClose;
+          NSLog(@"[MRAID Debug] Default close button %@", useCustomClose ? @"hidden" : @"shown");
+          break;
+        }
+      }
+    }
+  }
+}
+
+- (void)handleOrientationPropertiesChange:(NSDictionary *)orientationProperties {
+  // Handle orientation changes
+  BOOL allowOrientationChange = [orientationProperties[@"allowOrientationChange"] boolValue];
+  NSString *forceOrientation = orientationProperties[@"forceOrientation"];
+  
+  NSLog(@"[MRAID Debug] Orientation - Allow change: %@, Force: %@", 
+        allowOrientationChange ? @"YES" : @"NO", forceOrientation);
+  
+  // Apply orientation settings to the presented MRAID view controller
+  UIViewController *presentedController = self.presentedViewController;
+  if (presentedController && [presentedController isKindOfClass:[MRAIDViewController class]]) {
+    MRAIDViewController *mraidController = (MRAIDViewController *)presentedController;
+    
+    // Update MRAID orientation properties
+    mraidController.allowOrientationChange = allowOrientationChange;
+    mraidController.forceOrientation = forceOrientation ?: @"none";
+    
+    NSLog(@"[MRAID Debug] Updated MRAIDViewController - Allow change: %@, Force: %@", 
+          mraidController.allowOrientationChange ? @"YES" : @"NO", mraidController.forceOrientation);
+    
+    // Force orientation change if specified and orientation changes are not allowed
+    if (!allowOrientationChange) {
+      UIInterfaceOrientation targetOrientation = UIInterfaceOrientationUnknown;
+      
+      if ([forceOrientation isEqualToString:@"portrait"]) {
+        targetOrientation = UIInterfaceOrientationPortrait;
+      } else if ([forceOrientation isEqualToString:@"landscape"]) {
+        targetOrientation = UIInterfaceOrientationLandscapeLeft;
+      }
+      
+      if (targetOrientation != UIInterfaceOrientationUnknown) {
+        // Force the orientation change
+        [[UIDevice currentDevice] setValue:@(targetOrientation) forKey:@"orientation"];
+        NSLog(@"[MRAID Debug] Forced orientation to: %@", forceOrientation);
+      }
+    }
+    
+    // Trigger orientation update
+    [UIViewController attemptRotationToDeviceOrientation];
+    
+  } else {
+    NSLog(@"[MRAID Debug] Warning: Presented controller is not MRAIDViewController");
   }
 }
 
